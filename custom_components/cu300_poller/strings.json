@@ -1,0 +1,60 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Grundfos CU300 Setup",
+        "description": "Select connection type for your CU300 pump controller",
+        "data": {
+          "type": "Connection Type"
+        }
+      },
+      "serial": {
+        "title": "Serial Connection",
+        "description": "Configure serial port connection to CU300",
+        "data": {
+          "port": "Serial Port",
+          "update_interval": "Update Interval (seconds)"
+        },
+        "data_description": {
+          "port": "The serial port device (e.g., /dev/ttyUSB0)",
+          "update_interval": "How often to poll the device for updates"
+        }
+      },
+      "tcp": {
+        "title": "TCP Connection",
+        "description": "Configure TCP/IP connection to CU300",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "update_interval": "Update Interval (seconds)"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the device",
+          "port": "TCP port number",
+          "update_interval": "How often to poll the device for updates"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the device. Please check your connection settings and ensure the device is powered on and accessible.",
+      "unknown": "An unexpected error occurred. Please check the logs for more details."
+    },
+    "abort": {
+      "already_configured": "This device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CU300 Poller Options",
+        "description": "Configure options for the CU300 integration",
+        "data": {
+          "update_interval": "Update Interval (seconds)"
+        },
+        "data_description": {
+          "update_interval": "How often to poll the device for updates"
+        }
+      }
+    }
+  }
+}

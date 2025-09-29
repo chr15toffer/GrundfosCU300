@@ -1,0 +1,11 @@
+{
+  "name": "Grundfos CU300 Poller",
+  "content_in_root": false,
+  "filename": "cu300_poller",
+  "render_readme": true,
+  "domains": ["cu300_poller"],
+  "homeassistant": "2024.1.0",
+  "iot_class": "Local Polling",
+  "zip_release": false,
+  "hide_default_branch": false
+}
