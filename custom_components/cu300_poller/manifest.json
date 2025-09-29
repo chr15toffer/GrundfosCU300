@@ -1,0 +1,13 @@
+{
+  "domain": "cu300_poller",
+  "name": "Grundfos CU300 Poller",
+  "version": "1.0.0",
+  "documentation": "https://github.com/chr15toffer/GrundfosCU300",
+  "issue_tracker": "https://github.com/chr15toffer/GrundfosCU300/issues",
+  "requirements": ["pyserial-asyncio==0.6"],
+  "dependencies": [],
+  "codeowners": ["@chr15toffer"],
+  "iot_class": "local_polling",
+  "config_flow": true,
+  "integration_type": "device"
+}

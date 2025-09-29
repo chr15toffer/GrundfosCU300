@@ -1,0 +1,25 @@
+start_pump:
+  name: Start Pump
+  description: Start the CU300 pump
+  fields: {}
+
+stop_pump:
+  name: Stop Pump
+  description: Stop the CU300 pump
+  fields: {}
+
+set_reference:
+  name: Set Reference
+  description: Set the pump reference value (0-100%)
+  fields:
+    reference:
+      name: Reference Value
+      description: Reference value percentage (0-100)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+          mode: slider
