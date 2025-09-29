@@ -1,0 +1,14 @@
+start_pump:
+  description: Start the pump.
+  fields: {}
+
+stop_pump:
+  description: Stop the pump.
+  fields: {}
+
+set_reference:
+  description: Set the reference value (e.g., speed percentage).
+  fields:
+    reference:
+      description: Reference value (0-100%).
+      example: 50
