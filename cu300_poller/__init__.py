@@ -1,97 +1,170 @@
-     """CU300 Poller integration."""
-     import asyncio
-     import logging
-     import voluptuous as vol
-     from homeassistant.core import HomeAssistant
-     from homeassistant.const import CONF_TYPE, CONF_HOST, CONF_PORT
-     import homeassistant.helpers.config_validation as cv
-     from .const import DOMAIN, CONNECTION_TYPE_SERIAL, CONNECTION_TYPE_TCP
-     from .cu300_poller import CU300Poller
+"""CU300 Poller integration."""
+import logging
+import voluptuous as vol
 
-     _LOGGER = logging.getLogger(__name__)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_TYPE, CONF_HOST, CONF_PORT, Platform
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryNotReady
+import homeassistant.helpers.config_validation as cv
 
-     CONFIG_SCHEMA = vol.Schema(
-         {
-             DOMAIN: vol.Schema(
-                 {
-                     vol.Required(CONF_TYPE): vol.In([CONNECTION_TYPE_SERIAL, CONNECTION_TYPE_TCP]),
-                     vol.Optional(CONF_HOST): cv.string,
-                     vol.Required(CONF_PORT): cv.string,
-                 }
-             )
-         },
-         extra=vol.ALLOW_EXTRA,
-     )
+from .const import (
+    DOMAIN,
+    CONNECTION_TYPE_SERIAL,
+    CONNECTION_TYPE_TCP,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
+)
+from .coordinator import CU300Coordinator
 
-     async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-         """Set up the CU300 Poller integration from YAML."""
-         _LOGGER.debug("Starting setup for cu300_poller")
-         if DOMAIN not in config:
-             _LOGGER.debug("No cu300_poller configuration found")
-             return True
+_LOGGER = logging.getLogger(__name__)
 
-         conf = config[DOMAIN]
-         connection_type = conf.get(CONF_TYPE)
-         host = conf.get(CONF_HOST)
-         port = conf.get(CONF_PORT)
-         _LOGGER.debug(f"Config: type={connection_type}, host={host}, port={port}")
+PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.NUMBER]
 
-         # Initialize poller
-         try:
-             poller = CU300Poller(connection_type, host=host, port=port)
-             _LOGGER.debug("CU300Poller initialized")
-             await asyncio.wait_for(poller.connect(), timeout=15)
-             _LOGGER.debug("Poller connected")
-             hass.data.setdefault(DOMAIN, {})["yaml"] = poller
-         except asyncio.TimeoutError:
-             _LOGGER.error(f"Setup failed: Connection to {port or host} timed out")
-             return False
-         except Exception as e:
-             _LOGGER.error(f"Setup failed: Failed to connect to CU300: {e.__class__.__name__}: {str(e)}")
-             return False
+# YAML configuration schema (for backward compatibility)
+CONFIG_SCHEMA = vol.Schema(
+    {
+        DOMAIN: vol.Schema(
+            {
+                vol.Required(CONF_TYPE): vol.In([CONNECTION_TYPE_SERIAL, CONNECTION_TYPE_TCP]),
+                vol.Optional(CONF_HOST): cv.string,
+                vol.Required(CONF_PORT): cv.string,
+                vol.Optional(CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL): cv.positive_int,
+            }
+        )
+    },
+    extra=vol.ALLOW_EXTRA,
+)
 
-         # Set up platforms (sensor)
-         _LOGGER.debug("Setting up sensor platform")
-         await hass.async_create_task(
-             hass.config.async_setup_platforms(DOMAIN, ["sensor"])
-         )
-         _LOGGER.debug("Sensor platform setup completed")
+# Service schemas
+SERVICE_SET_REFERENCE_SCHEMA = vol.Schema(
+    {
+        vol.Required("reference"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+    }
+)
 
-         # Start polling
-         async def async_update_data():
-             _LOGGER.debug("Starting polling loop")
-             while True:
-                 try:
-                     await poller.poll()
-                 except Exception as e:
-                     _LOGGER.error(f"Error polling CU300: {e.__class__.__name__}: {str(e)}")
-                 await asyncio.sleep(30)  # Poll every 30 seconds
 
-         hass.async_create_task(async_update_data())
-         _LOGGER.debug("Polling task created")
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the CU300 Poller integration from YAML."""
+    if DOMAIN not in config:
+        return True
 
-         # Register services
-         async def handle_start_pump(call):
-             _LOGGER.debug("Service call: start_pump")
-             await poller.start_pump(call)
+    # YAML configuration is deprecated but supported for backward compatibility
+    _LOGGER.warning(
+        "YAML configuration for CU300 Poller is deprecated. "
+        "Please migrate to UI configuration."
+    )
 
-         async def handle_stop_pump(call):
-             _LOGGER.debug("Service call: stop_pump")
-             await poller.stop_pump(call)
+    conf = config[DOMAIN]
+    
+    # Store YAML config for use in async_setup_entry if no config entries exist
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN]["yaml_config"] = conf
 
-         async def handle_set_reference(call):
-             _LOGGER.debug("Service call: set_reference")
-             await poller.set_reference(call)
+    return True
 
-         async def handle_test_connection(call):
-             _LOGGER.debug("Service call: test_connection")
-             await poller.test_connection(call)
 
-         hass.services.async_register(DOMAIN, "start_pump", handle_start_pump)
-         hass.services.async_register(DOMAIN, "stop_pump", handle_stop_pump)
-         hass.services.async_register(DOMAIN, "set_reference", handle_set_reference)
-         hass.services.async_register(DOMAIN, "test_connection", handle_test_connection)
-         _LOGGER.debug("Services registered")
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up CU300 Poller from a config entry."""
+    _LOGGER.debug("Setting up CU300 Poller entry: %s", entry.entry_id)
 
-         _LOGGER.debug("Setup completed successfully")
-         return True
+    connection_type = entry.data[CONF_TYPE]
+    host = entry.data.get(CONF_HOST)
+    port = entry.data.get(CONF_PORT)
+    update_interval = entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+
+    # Create coordinator
+    coordinator = CU300Coordinator(
+        hass,
+        connection_type=connection_type,
+        host=host,
+        port=port,
+        update_interval=update_interval,
+    )
+
+    # Set up connection
+    try:
+        await coordinator.async_setup()
+    except ConfigEntryNotReady as err:
+        _LOGGER.error("Failed to set up CU300: %s", err)
+        raise
+
+    # Perform initial data fetch
+    await coordinator.async_config_entry_first_refresh()
+
+    # Store coordinator
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # Set up platforms
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Register services
+    async def handle_start_pump(call: ServiceCall) -> None:
+        """Handle start pump service call."""
+        _LOGGER.debug("Service call: start_pump")
+        try:
+            await coordinator.async_start_pump()
+        except Exception as err:
+            _LOGGER.error("Failed to start pump: %s", err)
+
+    async def handle_stop_pump(call: ServiceCall) -> None:
+        """Handle stop pump service call."""
+        _LOGGER.debug("Service call: stop_pump")
+        try:
+            await coordinator.async_stop_pump()
+        except Exception as err:
+            _LOGGER.error("Failed to stop pump: %s", err)
+
+    async def handle_set_reference(call: ServiceCall) -> None:
+        """Handle set reference service call."""
+        reference = call.data["reference"]
+        _LOGGER.debug("Service call: set_reference to %s", reference)
+        try:
+            await coordinator.async_set_reference(reference)
+        except Exception as err:
+            _LOGGER.error("Failed to set reference: %s", err)
+
+    # Register services (only once)
+    if not hass.services.has_service(DOMAIN, "start_pump"):
+        hass.services.async_register(DOMAIN, "start_pump", handle_start_pump)
+        hass.services.async_register(DOMAIN, "stop_pump", handle_stop_pump)
+        hass.services.async_register(
+            DOMAIN,
+            "set_reference",
+            handle_set_reference,
+            schema=SERVICE_SET_REFERENCE_SCHEMA,
+        )
+
+    _LOGGER.info("CU300 Poller setup completed successfully")
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    _LOGGER.debug("Unloading CU300 Poller entry: %s", entry.entry_id)
+
+    # Unload platforms
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    if unload_ok:
+        # Shutdown coordinator
+        coordinator: CU300Coordinator = hass.data[DOMAIN][entry.entry_id]
+        await coordinator.async_shutdown()
+
+        # Remove entry data
+        hass.data[DOMAIN].pop(entry.entry_id)
+
+        # Remove services if this is the last entry
+        if not hass.data[DOMAIN]:
+            hass.services.async_remove(DOMAIN, "start_pump")
+            hass.services.async_remove(DOMAIN, "stop_pump")
+            hass.services.async_remove(DOMAIN, "set_reference")
+
+    return unload_ok
+
+
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload config entry."""
+    await async_unload_entry(hass, entry)
+    await async_setup_entry(hass, entry)
